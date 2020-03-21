@@ -1,0 +1,123 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+```{r}
+library(dplyr)             #For Data transformation
+library(jsonlite)         #For manipulating JSON data
+library(ggcorrplot)
+library(ggplot2)          #Extension of ggplot2
+library(tidyverse)
+library(wordcloud)
+```
+```{r}
+movies <- read.csv("tmdb_5000_movies.csv", stringsAsFactors = FALSE)
+dim(movies)
+```
+```{r}
+#Removing Duplicates
+movies <- movies[!duplicated(movies$title), ]
+dim(movies)
+```
+```{r}
+#Examining the column names in the dataset
+colnames(movies)
+```
+```{r}
+#Dropping the variable homepage
+movies <- subset(movies,select = -c(3))
+#Convert budget and revenue in millions
+movies$budget <- movies$budget/1000000
+movies$revenue <- movies$revenue/1000000
+#Distribution of Important Variables
+#par(mfrow=c(2,3))
+hist(movies$budget,col = 'blue',breaks=40,main='Distribution of movie budget',xlab = 'budget (in million $)')
+hist(movies$revenue,col = 'blue',breaks=40,main='Distribution of movie revenue',xlab = 'revenue (in million $)',xlim=c(0,1000))
+hist(movies$runtime,col = 'blue',breaks=40,main='Distribution of movie runtime',xlab = 'runtime (in minutes)',xlim=c(0,250))
+hist(movies$vote_average,col = 'blue',breaks=40,main='Distribution of movie rating',xlab = 'rating (out of 10)',xlim=c(0,10))
+hist(movies$vote_count,col = 'blue',breaks=80,main='Distribution of votes',xlab = 'number of votes against a review')
+hist(movies$popularity,col = 'blue',breaks=40,main='Distribution of popularity rating',xlab = 'popularity rating')
+```
+```{r}
+##Correlation matrix
+cor.movies <- cor(movies.corr[,c('budget','popularity','revenue','runtime','vote_average','vote_count')])
+ggcorrplot(cor.movies,hc.order = TRUE,lab=TRUE) + ggtitle("Correlation between important predictors")
+```
+```{r}
+colnames(movies)[which(colnames(movies) == 'id')] <- 'movie_id'
+```
+```{r}
+colnames(movies)
+```
+```{r}
+#Convert categorical values to factors
+
+movies[,c("original_language", "spoken_languages", "status")] <- lapply(movies[,c("original_language", "spoken_languages", "status")], as.factor)
+```
+```{r}
+#Visualise top 10 movies
+movies$budget <- movies$budget*1000000
+movies$revenue <- movies$revenue*1000000
+top10 <- head(movies[order(movies$revenue, decreasing = TRUE), c("title", "revenue")], n = 10)
+top10
+```
+```{r}
+top10$title <- reorder(top10$title, as.numeric(top10$revenue))
+# Formating in Billions
+top10$revenue <- paste(format(round(top10$revenue / 1e3, 1), trim = TRUE), "B")
+
+ggplot(top10, aes(title, revenue)) +
+  geom_col(position = "dodge", aes(fill = revenue)) +
+  coord_flip() +
+  labs(x = "Movie Name", y = "Revenues in USD", title = "Top 10 Movie with Most Revenues All Time")
+```
+```{r}
+#Top 10 costliest movies
+#Convert budget and revenue in millions
+movies$budget <- movies$budget/1000000
+movies$revenue <- movies$revenue/1000000
+movies.cost <- movies[order(-movies$budget),] %>% head(n=10)
+ggplot(movies.cost,aes(x=reorder(title,budget),y=budget)) + geom_point(size=2, alpha=0.6,color="blue") + geom_segment(aes(x=title,xend=title,y=min(budget),yend=max(budget)),linetype="dashed",size=0.2)+labs(title="Top 10 costliest movies of all time ",y="budget(in million $)",x="movie title")+ coord_flip()
+```
+```{r}
+#Top 10 ROI
+movies.upd <- movies %>% mutate(roi=revenue/budget)
+rev.0 <- movies.upd %>% filter(budget>10)
+toproi <- rev.0[order(-rev.0$roi),] %>% head(10)
+
+ggplot(toproi, aes(x=reorder(title,roi), y=roi)) + 
+  geom_bar(width=.6, fill="blue",stat="identity") + 
+  labs(title="Top 10 movies based on return on investment(Budget>1 million $)",y="Return on Investment",x="movie title")+coord_flip()
+```
+```{r}
+#Importing the other dataset
+credits <- read.csv("tmdb_5000_credits.csv", stringsAsFactors = FALSE)
+colnames(credits)
+```
+```{r}
+all_crew <- credits %>%      # start with the raw tibble 
+  filter(nchar(crew) > 2) %>%        # filter out movies with empty crew  
+  mutate(                                 
+    js  =  lapply(crew, fromJSON)  # turn the JSON into a list
+  )  %>%                           #
+  unnest(js) 
+
+all_cast <- credits %>%      # start with the raw tibble 
+  filter(nchar(cast) > 2) %>%        # filter out movies with empty crew  
+  mutate(                          #       
+    js  =  lapply(cast, fromJSON)  # turn the JSON into a list
+  )  %>%                           #
+  unnest(js) 
+cast <- subset(all_cast, select = -c(movie_id, title, cast, crew))
+crew <- subset(all_cast, select = -c(movie_id, title, cast, crew))
+head(cast)
+head(crew)
+```
+
+```{r}
+#Join the two data sets to create a start schema
+overall <- inner_join(movies,credits, by=c("movie_id", "title"))
+```
+
